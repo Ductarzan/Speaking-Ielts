@@ -2,9 +2,14 @@ from flask import Flask, render_template, request, jsonify
 import google.generativeai as genai
 import speech_recognition as sr
 
-# Cấu hình API Gemini
+# Cấu hình API của Gemini
 GOOGLE_API_KEY = 'AIzaSyCfU2DGUHolmawp56N1SBB0srRtLTMcOak'
 genai.configure(api_key=GOOGLE_API_KEY)
+
+# Mô tả giả lập về AI là giáo viên IELTS band 8.0
+teacher_prompt = """
+Hãy tưởng tượng tôi là một giáo viên luyện thi IELTS Speaking band 8.0. Tôi sẽ đánh giá bài nói của bạn dựa trên...
+"""
 
 app = Flask(__name__)
 
@@ -26,32 +31,32 @@ def recognize_speech():
             audio = recognizer.record(source)
             text = recognizer.recognize_google(audio, language="en-US")
             return jsonify({"text": text})
-
     except sr.UnknownValueError:
         return jsonify({"error": "Không thể nhận diện giọng nói, vui lòng thử lại."}), 500
     except sr.RequestError:
         return jsonify({"error": "Có lỗi xảy ra khi sử dụng API nhận diện giọng nói."}), 500
 
-# API gọi API Gemini để đánh giá văn bản
+# API gọi Gemini để chấm điểm và nhận xét bài nói
 @app.route('/evaluate', methods=['POST'])
 def evaluate_speaking_text():
+    topic = request.form.get('topic')
     text = request.form.get('text')
-    if not text:
-        return jsonify({"error": "Vui lòng nhập câu trả lời để đánh giá."}), 400
+    if not topic or not text:
+        return jsonify({"error": "Vui lòng nhập cả chủ đề và câu trả lời để đánh giá."}), 400
 
-    # Giả lập gọi API Gemini
-    response = {
-        "score": 7.5,
-        "details": {
-            "fluency": {"score": 7, "feedback": "Tốc độ nói tự nhiên nhưng cần cải thiện."},
-            "coherence": {"score": 8, "feedback": "Ý tưởng trình bày rõ ràng và logic."},
-            "lexical_resource": {"score": 7, "feedback": "Sử dụng từ vựng tốt nhưng cần đa dạng hơn."},
-            "grammatical_range": {"score": 6.5, "feedback": "Một số lỗi ngữ pháp ảnh hưởng đến điểm."},
-            "pronunciation": {"score": 7, "feedback": "Phát âm ổn nhưng cần cải thiện ngữ điệu."}
-        }
-    }
+    model_name = 'gemini-1.5-pro-latest'
+    model = genai.GenerativeModel(model_name)
 
-    return jsonify(response)
+    try:
+        response = model.generate_content(
+            f"{teacher_prompt}\n\nChủ đề: {topic}\n\nĐánh giá bài nói:\n\n{text}\n\n"
+            "Chấm điểm và nhận xét dựa trên các tiêu chí IELTS Speaking:\n"
+            "- Fluency and Coherence\n- Lexical Resource\n- Grammatical Range and Accuracy\n- Pronunciation\n"
+            "Ngoài ra, đánh giá mức độ liên quan giữa chủ đề và nội dung bài nói."
+        )
+        return jsonify({"feedback": response.text})
+    except Exception as e:
+        return jsonify({"error": f"Lỗi khi gọi API Gemini: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
