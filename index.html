@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IELTS Speaking Evaluator</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; }
+        .container { text-align: center; }
+        textarea { width: 100%; height: 100px; margin-top: 10px; }
+        button { padding: 10px 20px; margin-top: 10px; }
+        #feedback { margin-top: 20px; white-space: pre-wrap; }
+        #recording-status { color: red; font-weight: bold; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>IELTS Speaking Evaluator</h1>
+
+        <!-- Nút ghi âm -->
+        <button id="record-button" onclick="toggleRecording()">Bắt đầu ghi âm</button>
+        <p id="recording-status"></p>
+
+        <!-- Textarea nhập câu trả lời -->
+        <label for="text">Nhập câu trả lời của bạn:</label><br>
+        <textarea id="text"></textarea><br><br>
+        <button onclick="evaluate()">Chấm điểm</button>
+
+        <h3>Phản hồi từ giảng viên:</h3>
+        <pre id="feedback"></pre>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        const recordButton = document.getElementById("record-button");
+        const recordingStatus = document.getElementById("recording-status");
+
+        // Hàm bắt đầu/dừng ghi âm
+        async function toggleRecording() {
+            if (!mediaRecorder || mediaRecorder.state === "inactive") {
+                try {
+                    // Yêu cầu quyền truy cập microphone và bắt đầu ghi âm
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.start();
+                    recordingStatus.innerText = "Đang ghi âm...";
+                    recordButton.innerText = "Dừng ghi âm";
+
+                    // Xử lý dữ liệu âm thanh khi có sẵn
+                    mediaRecorder.ondataavailable = event => {
+                        audioChunks.push(event.data);
+                    };
+
+                    // Khi dừng ghi âm, gửi tệp đến server
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+                        const formData = new FormData();
+                        formData.append("file", audioBlob, "recording.wav");
+
+                        const response = await fetch("/recognize", {
+                            method: "POST",
+                            body: formData
+                        });
+
+                        const result = await response.json();
+                        if (result.text) {
+                            document.getElementById("text").value = result.text;  // Hiển thị văn bản nhận diện được
+                        } else {
+                            alert(result.error);
+                        }
+
+                        // Reset trạng thái
+                        audioChunks = [];
+                        recordingStatus.innerText = "";
+                        recordButton.innerText = "Bắt đầu ghi âm";
+                    };
+                } catch (error) {
+                    alert("Không thể truy cập microphone. Vui lòng kiểm tra lại quyền.");
+                }
+            } else {
+                // Dừng ghi âm
+                mediaRecorder.stop();
+                recordingStatus.innerText = "Đang xử lý...";
+            }
+        }
+
+        // Hàm chấm điểm dựa trên văn bản trong textarea
+        async function evaluate() {
+            const text = document.getElementById("text").value;
+
+            const response = await fetch("/evaluate", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({ text })
+            });
+
+            const result = await response.json();
+
+            let feedback = `Điểm tổng quát: ${result.score}/9\n\n`;
+            for (const [criterion, details] of Object.entries(result.details)) {
+                feedback += `${criterion.charAt(0).toUpperCase() + criterion.slice(1)}:\n`;
+                feedback += `- Điểm: ${details.score}/9\n`;
+                feedback += `- Nhận xét: ${details.feedback}\n\n`;
+            }
+
+            document.getElementById("feedback").textContent = feedback;
+        }
+    </script>
+</body>
+</html>
